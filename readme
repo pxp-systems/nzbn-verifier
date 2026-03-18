@@ -1,1 +1,57 @@
-This project implements an in-memory-only remote verifier intended to contact centre agents to use in assisting holders with mDoc presentation problems.
+# NZBN Support Verifier (MVP)
+
+In-memory contact-centre verifier dashboard for troubleshooting mDoc presentation issues.
+
+## Is there a webpage?
+
+Yes.
+
+- **Agent dashboard:** `http://localhost:3000/`
+- **Holder page pattern:** `http://localhost:3000/session/{sessionId}`
+
+The holder URL is generated when a session is created and returned as `holderLink` in the API response.
+
+## Quick start
+
+```bash
+npm install
+npm run dev
+```
+
+Then open:
+
+- `http://localhost:3000/`
+
+## How to use the MVP
+
+1. Open the agent dashboard (`/`).
+2. Enter contact method/value and click **Start session**.
+3. Click **Send holder link**.
+4. Open the generated holder link (`/session/{sessionId}`) in another tab/browser.
+5. On holder page, choose a mock scenario and click **Present credential**.
+6. Agent dashboard updates live via SSE and shows 3 panes:
+   - Credential / verification result
+   - NZBN context
+   - Companies context
+
+## Important constraints
+
+- In-memory only (no DB, no persistence, no caching)
+- Mock integrations for verifier/NZBN/Companies/messaging
+- Session TTL auto-expiry (default 15 minutes)
+- Basic create-session rate limiting
+- No VC payload logging
+
+## If `npm run dev` fails with `EADDRINUSE` (port 3000 in use)
+
+```bash
+lsof -nP -iTCP:3000 -sTCP:LISTEN
+kill <PID>
+npm run dev
+```
+
+Alternative (temporary different port):
+
+```bash
+PORT=3001 npm run dev
+```
