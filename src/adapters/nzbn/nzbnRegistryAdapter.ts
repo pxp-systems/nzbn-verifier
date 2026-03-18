@@ -55,13 +55,16 @@ export class NzbnApiRegistryAdapter implements NzbnRegistryAdapter {
 
   constructor(options: NzbnRegistryAdapterOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
-    this.apiKey = options.apiKey;
+    this.apiKey = options.apiKey.trim();
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
-  async lookup(input: NzbnLookupInput): Promise<NzbnContext> {
+  async lookup(input: NzbnLookupInput): Promise<NzbnContext | null> {
     if (!this.apiKey) {
-      return this.fallbackLookup(input);
+      safeLogger.warn("NZBN API key missing; skipping lookup", {
+        event: "nzbn.lookup.missing_api_key"
+      });
+      return null;
     }
 
     const nzbn = input.assertedInput.nzbn.trim();
@@ -77,56 +80,36 @@ export class NzbnApiRegistryAdapter implements NzbnRegistryAdapter {
       });
 
       if (!response.ok) {
-        safeLogger.warn("NZBN lookup failed; using fallback context", {
+        safeLogger.warn("NZBN lookup failed", {
           event: "nzbn.lookup.error",
           details: {
             status: response.status,
             nzbn
           }
         });
-        return this.fallbackLookup(input);
+        return null;
       }
 
-      const entity = (await response.json()) as NzbnApiEntity;
+      const raw = (await response.json()) as unknown;
+      const entity = extractEntity(raw, nzbn);
+      if (!entity) {
+        safeLogger.warn("NZBN lookup returned unexpected response shape", {
+          event: "nzbn.lookup.unexpected_shape",
+          details: { nzbn }
+        });
+        return null;
+      }
+
       return this.toContext(input, entity);
     } catch {
-      safeLogger.warn("NZBN lookup request failed; using fallback context", {
+      safeLogger.warn("NZBN lookup request failed", {
         event: "nzbn.lookup.exception",
         details: {
           nzbn
         }
       });
-      return this.fallbackLookup(input);
+      return null;
     }
-  }
-
-  private fallbackLookup(input: NzbnLookupInput): NzbnContext {
-    const assertedNzbn = input.assertedInput.nzbn.trim();
-    const fallbackEntity: NzbnApiEntity = {
-      nzbn: assertedNzbn,
-      entityName: "WOOKIE INVESTMENTS LIMITED",
-      entityStatusCode: "ACT",
-      roles: [
-        {
-          roleType: "Director",
-          roleStatus: "Current",
-          rolePerson: {
-            firstName: "Alex",
-            lastName: "Taylor"
-          }
-        },
-        {
-          roleType: "Shareholder",
-          roleStatus: "Current",
-          rolePerson: {
-            firstName: "Sam",
-            lastName: "Morgan"
-          }
-        }
-      ]
-    };
-
-    return this.toContext(input, fallbackEntity);
   }
 
   private toContext(input: NzbnLookupInput, entity: NzbnApiEntity): NzbnContext {
@@ -217,4 +200,80 @@ function getSeededCandidateNames(nzbn: string): Set<string> {
 
   // Keep the local demo deterministic while real API data can vary over time.
   return new Set([normalizeName("Alex Taylor"), normalizeName("Sam Morgan")]);
+}
+
+function extractEntity(payload: unknown, requestedNzbn: string): NzbnApiEntity | undefined {
+  if (!payload || typeof payload !== "object") {
+    return undefined;
+  }
+
+  const record = payload as Record<string, unknown>;
+  if (isEntityLike(record)) {
+    return record as NzbnApiEntity;
+  }
+
+  if (record.entity && typeof record.entity === "object") {
+    const entity = record.entity as Record<string, unknown>;
+    if (isEntityLike(entity)) {
+      return entity as NzbnApiEntity;
+    }
+  }
+
+  const candidates = [record.items, record.entities, record.data].find(Array.isArray) as
+    | unknown[]
+    | undefined;
+
+  if (!candidates || candidates.length === 0) {
+    return undefined;
+  }
+
+  const normalizedRequestedNzbn = requestedNzbn.trim();
+  const directMatch = candidates.find((item) => {
+    if (!item || typeof item !== "object") {
+      return false;
+    }
+    const candidate = item as Record<string, unknown>;
+    if (typeof candidate.nzbn === "string") {
+      return candidate.nzbn.trim() === normalizedRequestedNzbn;
+    }
+    if (candidate.entity && typeof candidate.entity === "object") {
+      const nested = candidate.entity as Record<string, unknown>;
+      return typeof nested.nzbn === "string" && nested.nzbn.trim() === normalizedRequestedNzbn;
+    }
+    return false;
+  });
+
+  if (directMatch && typeof directMatch === "object") {
+    const matched = directMatch as Record<string, unknown>;
+    if (isEntityLike(matched)) {
+      return matched as NzbnApiEntity;
+    }
+    if (matched.entity && typeof matched.entity === "object" && isEntityLike(matched.entity as Record<string, unknown>)) {
+      return matched.entity as NzbnApiEntity;
+    }
+  }
+
+  const first = candidates[0];
+  if (!first || typeof first !== "object") {
+    return undefined;
+  }
+
+  const firstRecord = first as Record<string, unknown>;
+  if (isEntityLike(firstRecord)) {
+    return firstRecord as NzbnApiEntity;
+  }
+  if (firstRecord.entity && typeof firstRecord.entity === "object" && isEntityLike(firstRecord.entity as Record<string, unknown>)) {
+    return firstRecord.entity as NzbnApiEntity;
+  }
+
+  return undefined;
+}
+
+function isEntityLike(value: Record<string, unknown>): boolean {
+  return (
+    typeof value.nzbn === "string" ||
+    typeof value.entityName === "string" ||
+    Array.isArray(value.roles) ||
+    typeof value["company-details"] === "object"
+  );
 }

@@ -1,7 +1,10 @@
 import {
+  CreateVerifierSessionInput,
   CompaniesRegistryAdapter,
   MessagingAdapter,
   NzbnRegistryAdapter,
+  VerifierResultInfo,
+  VerifierSessionInfo,
   VerifierAdapter
 } from "../domain/interfaces.js";
 import { ContactMethod, SessionEvent, SessionView, TroubleshootingSession, VerificationScenario } from "../domain/types.js";
@@ -11,6 +14,7 @@ import { InMemorySessionStore } from "../sessions/inMemorySessionStore.js";
 export interface TroubleshootingServiceDependencies {
   sessionStore: InMemorySessionStore;
   verifierAdapter: VerifierAdapter;
+  verifierSessionAdapter?: VerifierAdapter;
   nzbnRegistryAdapter: NzbnRegistryAdapter;
   companiesRegistryAdapter: CompaniesRegistryAdapter;
   messagingAdapter: MessagingAdapter;
@@ -19,6 +23,7 @@ export interface TroubleshootingServiceDependencies {
 export class TroubleshootingService {
   private readonly sessionStore: InMemorySessionStore;
   private readonly verifierAdapter: VerifierAdapter;
+  private readonly verifierSessionAdapter?: VerifierAdapter;
   private readonly nzbnRegistryAdapter: NzbnRegistryAdapter;
   private readonly companiesRegistryAdapter: CompaniesRegistryAdapter;
   private readonly messagingAdapter: MessagingAdapter;
@@ -26,6 +31,7 @@ export class TroubleshootingService {
   constructor(dependencies: TroubleshootingServiceDependencies) {
     this.sessionStore = dependencies.sessionStore;
     this.verifierAdapter = dependencies.verifierAdapter;
+    this.verifierSessionAdapter = dependencies.verifierSessionAdapter;
     this.nzbnRegistryAdapter = dependencies.nzbnRegistryAdapter;
     this.companiesRegistryAdapter = dependencies.companiesRegistryAdapter;
     this.messagingAdapter = dependencies.messagingAdapter;
@@ -105,9 +111,13 @@ export class TroubleshootingService {
       presentedCredential
     });
 
-    const nzbnContext = await this.nzbnRegistryAdapter.lookup({
+    let nzbnContext = await this.nzbnRegistryAdapter.lookup({
       assertedInput: presentedCredential.holderClaims
     });
+    let nzbnLookupError: string | undefined;
+    if (!nzbnContext) {
+      nzbnLookupError = `NZBN lookup failed for ${presentedCredential.holderClaims.nzbn}.`;
+    }
 
     const companiesContext = await this.companiesRegistryAdapter.lookup({
       assertedInput: presentedCredential.holderClaims
@@ -117,7 +127,8 @@ export class TroubleshootingService {
       session.assertedInput = presentedCredential.holderClaims;
       session.presentedCredential = presentedCredential;
       session.verificationResult = verificationResult;
-      session.nzbnContext = nzbnContext;
+      session.nzbnContext = nzbnContext ?? undefined;
+      session.nzbnLookupError = nzbnLookupError;
       session.companiesContext = companiesContext;
       session.status = "verification_complete";
       session.events.push(event("presentation_received", "Holder submitted credential presentation."));
@@ -139,6 +150,53 @@ export class TroubleshootingService {
   resetSessions(): void {
     this.sessionStore.reset();
     safeLogger.info("All sessions cleared", { event: "session.reset" });
+  }
+
+  async createVerifierSession(input: CreateVerifierSessionInput): Promise<VerifierSessionInfo> {
+    const adapter = this.sessionCapableVerifierAdapter();
+    if (!adapter?.createVerificationSession) {
+      throw new Error("Active verifier provider does not support session creation.");
+    }
+
+    const session = this.sessionStore.get(input.sessionId);
+    return adapter.createVerificationSession({
+      sessionId: input.sessionId,
+      nzbn: input.nzbn ?? session.assertedInput?.nzbn,
+      fullName: input.fullName ?? session.assertedInput?.fullName,
+      requestCredentials: input.requestCredentials
+    });
+  }
+
+  async getVerifierResult(requestId: string): Promise<VerifierResultInfo> {
+    const adapter = this.sessionCapableVerifierAdapter();
+    if (!adapter?.getVerificationResult) {
+      throw new Error("Active verifier provider does not support result retrieval.");
+    }
+
+    return adapter.getVerificationResult(requestId);
+  }
+
+  normalizeVerifierResult(result: VerifierResultInfo) {
+    const adapter = this.sessionCapableVerifierAdapter();
+    if (adapter?.normalizeVerificationResult) {
+      return adapter.normalizeVerificationResult(result);
+    }
+
+    return {
+      result: "not_presented" as const,
+      signatureTrust: "unknown" as const,
+      revocationStatus: "unknown" as const,
+      scenario: "no_presentation" as const,
+      message: "Verifier result normalization is not available for the active provider."
+    };
+  }
+
+  private sessionCapableVerifierAdapter(): VerifierAdapter | undefined {
+    if (this.verifierAdapter.createVerificationSession) {
+      return this.verifierAdapter;
+    }
+
+    return this.verifierSessionAdapter;
   }
 }
 

@@ -28,6 +28,25 @@ export interface VerifyPresentationInput {
   presentedCredential: PresentedCredentialDetails;
 }
 
+export interface CreateVerifierSessionInput {
+  sessionId: string;
+  nzbn?: string;
+  fullName?: string;
+  requestCredentials?: Array<Record<string, unknown>>;
+}
+
+export interface VerifierSessionInfo {
+  requestId: string;
+  holderUrl?: string;
+  raw: unknown;
+}
+
+export interface VerifierResultInfo {
+  requestId: string;
+  status: string;
+  raw: unknown;
+}
+
 export interface NzbnLookupInput {
   assertedInput: AssertedInput;
 }
@@ -43,10 +62,13 @@ export interface MessagingAdapter {
 export interface VerifierAdapter {
   buildMockPresentation(input: MockPresentationInput): Promise<PresentedCredentialDetails>;
   verifyPresentation(input: VerifyPresentationInput): Promise<VerificationPane>;
+  createVerificationSession?(input: CreateVerifierSessionInput): Promise<VerifierSessionInfo>;
+  getVerificationResult?(requestId: string): Promise<VerifierResultInfo>;
+  normalizeVerificationResult?(result: VerifierResultInfo): VerificationPane;
 }
 
 export interface NzbnRegistryAdapter {
-  lookup(input: NzbnLookupInput): Promise<NzbnContext>;
+  lookup(input: NzbnLookupInput): Promise<NzbnContext | null>;
 }
 
 export interface CompaniesRegistryAdapter {

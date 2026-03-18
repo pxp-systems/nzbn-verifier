@@ -1,15 +1,18 @@
 import express, { NextFunction, Request, Response } from "express";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import QRCode from "qrcode";
 import { AppDependencies } from "../bootstrap/createDependencies.js";
 import { env } from "../config/env.js";
 import { RateLimitError, SessionExpiredError, SessionNotFoundError } from "../domain/errors.js";
 import { safeLogger } from "../logging/safeLogger.js";
 import {
+  createVerifierSessionSchema,
   createSessionSchema,
   presentCredentialSchema,
   sendLinkSchema,
   sessionIdParamSchema,
+  verifierResultParamSchema,
 } from "../schemas/api.js";
 import { ErrorResponse, SessionEventResponse, SessionResponse } from "../shared/apiTypes.js";
 import { parseOrThrow, ValidationErrorPayload } from "../utils/validate.js";
@@ -106,6 +109,7 @@ export function createApp(dependencies: AppDependencies) {
   app.get("/api/sessions/:sessionId/events", (req, res, next) => {
     try {
       const { sessionId } = parseOrThrow(sessionIdParamSchema, req.params);
+      const session = dependencies.troubleshootingService.getSession(sessionId);
 
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
@@ -116,7 +120,6 @@ export function createApp(dependencies: AppDependencies) {
       listeners.add(res);
       sseClients.set(sessionId, listeners);
 
-      const session = dependencies.troubleshootingService.getSession(sessionId);
       publishSession(sessionId, session, sseClients);
 
       req.on("close", () => {
@@ -133,7 +136,49 @@ export function createApp(dependencies: AppDependencies) {
     res.json({ message: "Session memory cleared." });
   });
 
+  app.post("/api/dev/verifier/session", async (req, res, next) => {
+    try {
+      const payload = parseOrThrow(createVerifierSessionSchema, req.body);
+      const session = await dependencies.troubleshootingService.createVerifierSession(payload);
+      const qrDataUrl = session.holderUrl ? await QRCode.toDataURL(session.holderUrl, { width: 260 }) : undefined;
+      res.json({ session, qrDataUrl });
+    } catch (error) {
+      if (isFeatureNotSupportedError(error)) {
+        res.status(501).json({ message: (error as Error).message });
+        return;
+      }
+      if (isVerifierUpstreamError(error)) {
+        res.status(502).json({ message: (error as Error).message });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  app.get("/api/dev/verifier/result/:requestId", async (req, res, next) => {
+    try {
+      const { requestId } = parseOrThrow(verifierResultParamSchema, req.params);
+      const result = await dependencies.troubleshootingService.getVerifierResult(requestId);
+      const normalized = dependencies.troubleshootingService.normalizeVerifierResult(result);
+      res.json({ result, normalized });
+    } catch (error) {
+      if (isFeatureNotSupportedError(error)) {
+        res.status(501).json({ message: (error as Error).message });
+        return;
+      }
+      if (isVerifierUpstreamError(error)) {
+        res.status(502).json({ message: (error as Error).message });
+        return;
+      }
+      next(error);
+    }
+  });
+
   app.use((error: unknown, _req: Request, res: Response<ErrorResponse>, _next: NextFunction) => {
+    if (res.headersSent) {
+      return;
+    }
+
     if (error instanceof SessionNotFoundError) {
       res.status(404).json({ message: error.message });
       return;
@@ -210,12 +255,20 @@ function isValidationError(
   );
 }
 
+function isFeatureNotSupportedError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("does not support");
+}
+
+function isVerifierUpstreamError(error: unknown): boolean {
+  return error instanceof Error && error.message.toLowerCase().includes("walt.id");
+}
+
 function baseUrl(req: Request): string {
   return `${req.protocol}://${req.get("host")}`;
 }
 
 function renderAgentDashboardPage(): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>NZBN Support Verifier</title><script type="module" src="/ui/agent.js"></script><style>body{font-family:sans-serif;margin:1rem;background:#f9fafb;color:#1f2937}h1{margin:0 0 1rem}section{background:#fff;border:1px solid #d1d5db;border-radius:8px;padding:1rem;margin-bottom:1rem}.row{display:flex;gap:.5rem;flex-wrap:wrap}input,select,button{padding:.45rem .6rem;border:1px solid #cbd5e1;border-radius:6px}button{background:#111827;color:#fff;border:none}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}pre{white-space:pre-wrap;font-size:.85rem;background:#f3f4f6;padding:.75rem;border-radius:6px}@media(max-width:980px){.grid{grid-template-columns:1fr}}</style></head><body><h1>NZBN Support Verifier Dashboard</h1><section><div class="row"><select id="contactMethod"><option value="sms">sms</option><option value="email">email</option></select><input id="contactValue" placeholder="Contact value" /><button id="createSession">Start session</button><button id="sendLink">Send holder link</button><button id="resetSessions">Reset memory</button></div><p id="sessionMeta">No session yet.</p></section><section class="grid"><div><h2>Credential / Verification</h2><pre id="paneVerification">No presentation yet.</pre></div><div><h2>NZBN Context</h2><pre id="paneNzbn">No NZBN lookup yet.</pre></div><div><h2>Companies Context</h2><pre id="paneCompanies">No Companies lookup yet.</pre></div></section><section><h2>Session Timeline</h2><pre id="sessionTimeline">No events yet.</pre></section></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>NZBN Support Verifier</title><script type="module" src="/ui/agent.js"></script><style>body{font-family:sans-serif;margin:1rem;background:#f9fafb;color:#1f2937}h1{margin:0 0 1rem}section{background:#fff;border:1px solid #d1d5db;border-radius:8px;padding:1rem;margin-bottom:1rem}.row{display:flex;gap:.5rem;flex-wrap:wrap}input,select,button{padding:.45rem .6rem;border:1px solid #cbd5e1;border-radius:6px}button{background:#111827;color:#fff;border:none}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}pre{white-space:pre-wrap;font-size:.85rem;background:#f3f4f6;padding:.75rem;border-radius:6px}#verifierQrImage{max-width:260px;width:100%;height:auto;display:none}#verifierQrLink{word-break:break-all}@media(max-width:980px){.grid{grid-template-columns:1fr}}</style></head><body><h1>NZBN Support Verifier Dashboard</h1><section><div class="row"><select id="contactMethod"><option value="sms">sms</option><option value="email">email</option></select><input id="contactValue" placeholder="Contact value" /><button id="createSession">Start session</button><button id="sendLink">Send holder link</button><button id="createVerifierQr">Create Walt.id QR</button><button id="resetSessions">Reset memory</button></div><p id="sessionMeta">No session yet.</p></section><section><h2>Walt.id Wallet Presentation</h2><p id="verifierQrStatus">No Walt.id presentation request yet.</p><img id="verifierQrImage" alt="" /><p><a id="verifierQrLink" target="_blank" rel="noopener noreferrer"></a></p></section><section class="grid"><div><h2>Credential / Verification</h2><pre id="paneVerification">No presentation yet.</pre></div><div><h2>NZBN Context</h2><pre id="paneNzbn">No NZBN lookup yet.</pre></div><div><h2>Companies Context</h2><pre id="paneCompanies">No Companies lookup yet.</pre></div></section><section><h2>Session Timeline</h2><pre id="sessionTimeline">No events yet.</pre></section></body></html>`;
 }
 
 function renderHolderPage(sessionId: string): string {

@@ -18,6 +18,46 @@ npm install
 npm run dev
 ```
 
+## Verifier providers
+
+- Default provider is `mock`.
+- Set `VERIFIER_PROVIDER=waltid` to use Walt.id-backed verifier session/result calls.
+
+Environment variables:
+
+```bash
+VERIFIER_PROVIDER=mock # or waltid
+WALTID_BASE_URL=http://localhost:7003
+WALTID_CREATE_SESSION_PATH=/openid4vc/verify
+WALTID_RESULT_PATH_TEMPLATE=/openid4vc/session/{id}
+WALTID_REQUEST_CREDENTIALS_JSON=[{"format":"jwt_vc_json","type":"OpenBadgeCredential"}]
+WALTID_API_KEY=
+```
+
+Note: some Walt.id deployments do not expose a `/health` route. Use the verifier endpoints above for connectivity checks.
+
+### Run Walt.id locally (dev)
+
+Use your existing Walt.id verifier API setup and ensure it is reachable at `WALTID_BASE_URL`.
+
+Minimal smoke flow from this app:
+
+1. Create a verifier session:
+
+```bash
+curl -s -X POST http://localhost:3000/api/dev/verifier/session \
+  -H 'content-type: application/json' \
+  -d '{"sessionId":"dev-session-1","fullName":"Alex Taylor","nzbn":"9429041138090"}'
+```
+
+2. Later, fetch result + normalized app view:
+
+```bash
+curl -s http://localhost:3000/api/dev/verifier/result/<requestId>
+```
+
+The response includes raw provider status and the app's normalized verification model.
+
 Then open:
 
 - `http://localhost:3000/`
