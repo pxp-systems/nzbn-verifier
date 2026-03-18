@@ -11,7 +11,8 @@ export const sendLinkSchema = z.object({
 });
 
 export const presentCredentialSchema = z.object({
-  scenario: z.enum(["valid", "expired", "revoked", "invalid", "no_presentation"])
+  scenario: z.enum(["valid", "expired", "revoked", "invalid", "no_presentation"]),
+  nzbn: z.string().trim().min(1).optional()
 });
 
 export const sessionIdParamSchema = z.object({

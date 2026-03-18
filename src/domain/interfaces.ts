@@ -19,6 +19,7 @@ export interface MessagingInput {
 export interface MockPresentationInput {
   sessionId: string;
   scenario: VerificationScenario;
+  nzbn?: string;
 }
 
 export interface VerifyPresentationInput {

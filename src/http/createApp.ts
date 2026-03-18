@@ -80,7 +80,8 @@ export function createApp(dependencies: AppDependencies) {
       const payload = parseOrThrow(presentCredentialSchema, req.body);
       const session = await dependencies.troubleshootingService.processHolderPresentation(
         sessionId,
-        payload.scenario
+        payload.scenario,
+        payload.nzbn
       );
 
       publishSession(sessionId, session, sseClients);
@@ -218,5 +219,5 @@ function renderAgentDashboardPage(): string {
 }
 
 function renderHolderPage(sessionId: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Join Verification Session</title><script type="module" src="/ui/holder.js"></script><style>body{font-family:sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem}section{border:1px solid #d1d5db;border-radius:8px;padding:1rem}.row{display:flex;gap:.5rem;flex-wrap:wrap}select,button{padding:.45rem .6rem;border:1px solid #cbd5e1;border-radius:6px}button{background:#111827;color:#fff;border:none}</style></head><body><section><h1>You are joining a support verification session</h1><p>Session ID: <code>${sessionId}</code></p><p>Select a mock scenario and present your credential.</p><div class="row"><select id="scenario"><option value="valid">valid</option><option value="expired">expired</option><option value="revoked">revoked</option><option value="invalid">invalid</option><option value="no_presentation">no_presentation</option></select><button id="present">Present credential</button></div><p id="holderResult"></p></section></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Join Verification Session</title><script type="module" src="/ui/holder.js"></script><style>body{font-family:sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem}section{border:1px solid #d1d5db;border-radius:8px;padding:1rem}.row{display:flex;gap:.5rem;flex-wrap:wrap}input,select,button{padding:.45rem .6rem;border:1px solid #cbd5e1;border-radius:6px}button{background:#111827;color:#fff;border:none}</style></head><body><section><h1>You are joining a support verification session</h1><p>Session ID: <code>${sessionId}</code></p><p>Select a mock scenario and present your credential.</p><div class="row"><select id="scenario"><option value="valid">valid</option><option value="expired">expired</option><option value="revoked">revoked</option><option value="invalid">invalid</option><option value="no_presentation">no_presentation</option></select><input id="nzbn" placeholder="Override NZBN (optional)" value="9429041138090" /><button id="present">Present credential</button></div><p id="holderResult"></p></section></body></html>`;
 }

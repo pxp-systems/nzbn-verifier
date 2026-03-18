@@ -43,6 +43,52 @@ describe("NZBN support verifier API", () => {
     expect(Array.isArray(presentationResponse.body.session.events)).toBe(true);
   });
 
+  it("returns trusted signature with revoked status and revoked holder name for revoked scenario", async () => {
+    const app = buildApp();
+
+    const createResponse = await request(app).post("/api/sessions").send({
+      contactMethod: "sms",
+      contactValue: "+64000000000"
+    });
+
+    const sessionId = createResponse.body.session.sessionId as string;
+
+    const presentationResponse = await request(app)
+      .post(`/api/sessions/${sessionId}/present`)
+      .send({
+        scenario: "revoked"
+      });
+
+    expect(presentationResponse.status).toBe(200);
+    expect(presentationResponse.body.session.presentedCredential.holderClaims.fullName).toBe(
+      "Renee Revoked Holder"
+    );
+    expect(presentationResponse.body.session.verificationResult.signatureTrust).toBe("trusted");
+    expect(presentationResponse.body.session.verificationResult.revocationStatus).toBe("revoked");
+  });
+
+  it("accepts nzbn override in holder presentation payload", async () => {
+    const app = buildApp();
+
+    const createResponse = await request(app).post("/api/sessions").send({
+      contactMethod: "sms",
+      contactValue: "+64000000000"
+    });
+
+    const sessionId = createResponse.body.session.sessionId as string;
+
+    const presentationResponse = await request(app)
+      .post(`/api/sessions/${sessionId}/present`)
+      .send({
+        scenario: "valid",
+        nzbn: "9429049999999"
+      });
+
+    expect(presentationResponse.status).toBe(200);
+    expect(presentationResponse.body.session.presentedCredential.holderClaims.nzbn).toBe("9429049999999");
+    expect(presentationResponse.body.session.nzbnContext.nzbn).toBe("9429049999999");
+  });
+
   it("resets in-memory sessions", async () => {
     const app = buildApp();
 

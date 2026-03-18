@@ -95,9 +95,10 @@ export class TroubleshootingService {
 
   async processHolderPresentation(
     sessionId: string,
-    scenario: VerificationScenario
+    scenario: VerificationScenario,
+    nzbn?: string
   ): Promise<SessionView> {
-    const presentedCredential = await this.verifierAdapter.buildMockPresentation({ sessionId, scenario });
+    const presentedCredential = await this.verifierAdapter.buildMockPresentation({ sessionId, scenario, nzbn });
     const verificationResult = await this.verifierAdapter.verifyPresentation({
       sessionId,
       scenario,
