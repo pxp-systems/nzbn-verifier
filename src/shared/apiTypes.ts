@@ -12,6 +12,14 @@ export interface SendLinkRequest {
 
 export interface PresentCredentialRequest {
   scenario: VerificationScenario;
+  nzbn?: string;
+}
+
+export interface CreateVerifierSessionRequest {
+  sessionId: string;
+  nzbn?: string;
+  fullName?: string;
+  requestCredentials?: Array<Record<string, unknown>>;
 }
 
 export interface SessionResponse {

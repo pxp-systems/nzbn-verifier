@@ -88,6 +88,7 @@ export interface TroubleshootingSession {
   presentedCredential?: PresentedCredentialDetails;
   verificationResult?: VerificationPane;
   nzbnContext?: NzbnContext;
+  nzbnLookupError?: string;
   companiesContext?: CompaniesContext;
   events: SessionEvent[];
 }
@@ -103,6 +104,7 @@ export interface SessionView {
   presentedCredential?: PresentedCredentialDetails;
   verificationResult?: VerificationPane;
   nzbnContext?: NzbnContext;
+  nzbnLookupError?: string;
   companiesContext?: CompaniesContext;
   events: SessionEvent[];
 }

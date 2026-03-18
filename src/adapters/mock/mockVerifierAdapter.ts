@@ -12,10 +12,11 @@ import {
 export class MockVerifierAdapter implements VerifierAdapter {
   async buildMockPresentation(input: MockPresentationInput): Promise<PresentedCredentialDetails> {
     // TODO: Replace this mock flow with real holder presentation capture.
+    const selectedNzbn = input.nzbn?.trim() || "9429041138090";
     const baseClaims: AssertedInput = {
       fullName: "Alex Taylor",
       dateOfBirth: "1988-10-12",
-      nzbn: "9429041234567",
+      nzbn: selectedNzbn,
       rolesControlled: ["Administrator"],
       rolesDirectorAsserted: ["Director"]
     };
@@ -29,7 +30,21 @@ export class MockVerifierAdapter implements VerifierAdapter {
         expiryDate: "2028-01-01",
         holderClaims: {
           ...baseClaims,
-          fullName: "Mismatch Holder"
+          fullName: "Casey NoMatch"
+        }
+      };
+    }
+
+    if (input.scenario === "revoked") {
+      return {
+        issuer: "mock-issuer",
+        documentType: "NZBN VC",
+        documentNumber: `DOC-${input.sessionId.slice(0, 8).toUpperCase()}`,
+        issuedDate: "2024-01-01",
+        expiryDate: "2028-01-01",
+        holderClaims: {
+          ...baseClaims,
+          fullName: "Renee Revoked Holder"
         }
       };
     }

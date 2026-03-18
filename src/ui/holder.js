@@ -1,4 +1,5 @@
 const scenarioSelect = document.getElementById("scenario");
+const nzbnInput = document.getElementById("nzbn");
 const presentButton = document.getElementById("present");
 const holderResult = document.getElementById("holderResult");
 
@@ -18,7 +19,8 @@ async function presentCredential() {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      scenario: scenarioSelect.value
+      scenario: scenarioSelect.value,
+      nzbn: nzbnInput?.value.trim() || undefined
     })
   });
 
